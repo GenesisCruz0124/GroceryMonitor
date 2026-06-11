@@ -106,7 +106,7 @@
         <input type="text" id="f-item" placeholder="e.g. Milk, weekly shop at Costco" required maxlength="80" />
       </label>
       <div class="form-row">
-        <label>Amount ($)
+        <label>Amount (₱)
           <input type="number" id="f-amount" min="0.01" step="0.01" placeholder="0.00" required />
         </label>
         <label>Date
@@ -118,7 +118,7 @@
           <select id="f-category" required></select>
         </label>
         <label>Store <span class="muted">(optional)</span>
-          <input type="text" id="f-store" placeholder="e.g. Walmart" maxlength="50" list="store-suggestions" />
+          <input type="text" id="f-store" placeholder="e.g. SM Supermarket" maxlength="50" list="store-suggestions" />
           <datalist id="store-suggestions"></datalist>
         </label>
       </div>
@@ -133,8 +133,8 @@
   <dialog id="budget-modal">
     <form id="budget-form" method="dialog">
       <h2>Monthly budget</h2>
-      <label>Budget amount ($)
-        <input type="number" id="f-budget" min="0" step="1" placeholder="e.g. 500" />
+      <label>Budget amount (₱)
+        <input type="number" id="f-budget" min="0" step="1" placeholder="e.g. 15000" />
       </label>
       <p class="muted">Leave empty to remove the budget.</p>
       <div class="form-actions">

@@ -52,7 +52,7 @@
   const $ = (sel) => document.querySelector(sel);
 
   const fmtMoney = (n) =>
-    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    n.toLocaleString("en-PH", { style: "currency", currency: "PHP" });
 
   function todayISO() {
     const d = new Date();
@@ -426,7 +426,7 @@
   // Sample data (only offered when the list is empty)
   $("#btn-sample").addEventListener("click", () => {
     expenses = makeSampleData();
-    if (!budget) budget = 500;
+    if (!budget) budget = 15000;
     persist();
     render();
     showToast("Sample data loaded — edit or delete anything");
@@ -444,7 +444,7 @@
       ["Tortilla chips", "Snacks", 4.49], ["Granola bars", "Snacks", 5.99],
       ["Paper towels", "Household", 8.99], ["Dish soap", "Household", 3.79],
     ];
-    const stores = ["Walmart", "Trader Joe's", "Costco", "Kroger"];
+    const stores = ["SM Supermarket", "Puregold", "Robinsons Supermarket", "Landers"];
     const out = [];
     const now = new Date();
     // ~10 shopping trips spread over the last 3 months
@@ -456,8 +456,9 @@
         const store = stores[(m * 3 + t) % stores.length];
         const count = 3 + ((m + t) % 4);
         for (let i = 0; i < count; i++) {
-          const [item, category, amount] = items[(m * 7 + t * 5 + i * 3) % items.length];
-          out.push({ id: crypto.randomUUID(), item, category, store, amount, date });
+          const [item, category, usd] = items[(m * 7 + t * 5 + i * 3) % items.length];
+          // Sample prices are listed in USD-ish figures; scale to realistic pesos
+          out.push({ id: crypto.randomUUID(), item, category, store, amount: Math.round(usd * 30), date });
         }
       }
     }
