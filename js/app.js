@@ -430,6 +430,29 @@
     showToast("CSV downloaded");
   });
 
+  // Reset all data
+  $("#btn-reset").addEventListener("click", () => {
+    if (expenses.length === 0 && !budget) {
+      showToast("Nothing to reset");
+      return;
+    }
+    const ok = confirm(
+      "This permanently deletes ALL expenses and your budget.\n\n" +
+      "Tip: use Export CSV first if you want a backup.\n\nReset everything?"
+    );
+    if (!ok) return;
+    expenses = [];
+    budget = null;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(BUDGET_KEY);
+    filters = { search: "", category: "", month: "" };
+    $("#filter-search").value = "";
+    $("#filter-category").value = "";
+    $("#filter-month").value = "";
+    render();
+    showToast("All data deleted — starting fresh");
+  });
+
   // Theme toggle
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
