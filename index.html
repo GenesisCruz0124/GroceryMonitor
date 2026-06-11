@@ -103,7 +103,8 @@
       <h2 id="modal-title">Add expense</h2>
       <input type="hidden" id="f-id" />
       <label>Item
-        <input type="text" id="f-item" placeholder="e.g. Milk, weekly shop at Costco" required maxlength="80" />
+        <input type="text" id="f-item" placeholder="e.g. Milk, weekly shop at Costco" required maxlength="80" list="item-suggestions" />
+        <datalist id="item-suggestions"></datalist>
       </label>
       <div class="form-row">
         <label>Amount (₱)
