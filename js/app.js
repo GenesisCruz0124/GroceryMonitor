@@ -6,6 +6,7 @@
   const STORAGE_KEY = "groceryMonitor.expenses";
   const BUDGET_KEY = "groceryMonitor.budget";
   const THEME_KEY = "groceryMonitor.theme";
+  const ITEMS_KEY = "groceryMonitor.items";
 
   const CATEGORIES = [
     "Produce", "Dairy & Eggs", "Meat & Seafood", "Bakery", "Pantry",
@@ -17,10 +18,41 @@
     "#3bb3c4", "#d95f9c", "#7a9e3b", "#9a8b7a", "#8b97a1",
   ];
 
+  // Built-in starter items so suggestions work before any purchase history
+  const CATALOG = [
+    ["Bananas", "Produce"], ["Mangoes", "Produce"], ["Calamansi", "Produce"],
+    ["Tomatoes", "Produce"], ["Onions", "Produce"], ["Garlic", "Produce"],
+    ["Potatoes", "Produce"], ["Carrots", "Produce"], ["Cabbage", "Produce"],
+    ["Eggplant", "Produce"], ["Kangkong", "Produce"], ["Pechay", "Produce"],
+    ["Eggs (dozen)", "Dairy & Eggs"], ["Fresh milk", "Dairy & Eggs"],
+    ["Evaporated milk", "Dairy & Eggs"], ["Condensed milk", "Dairy & Eggs"],
+    ["Cheese", "Dairy & Eggs"], ["Butter", "Dairy & Eggs"], ["Yogurt", "Dairy & Eggs"],
+    ["Chicken (whole)", "Meat & Seafood"], ["Chicken breast", "Meat & Seafood"],
+    ["Pork belly (liempo)", "Meat & Seafood"], ["Ground pork", "Meat & Seafood"],
+    ["Beef", "Meat & Seafood"], ["Bangus", "Meat & Seafood"], ["Tilapia", "Meat & Seafood"],
+    ["Galunggong", "Meat & Seafood"], ["Shrimp", "Meat & Seafood"],
+    ["Hotdogs", "Meat & Seafood"], ["Tocino", "Meat & Seafood"], ["Longganisa", "Meat & Seafood"],
+    ["Pandesal", "Bakery"], ["Loaf bread", "Bakery"], ["Ensaymada", "Bakery"],
+    ["Rice 5kg", "Pantry"], ["Cooking oil", "Pantry"], ["Soy sauce", "Pantry"],
+    ["Vinegar", "Pantry"], ["Fish sauce (patis)", "Pantry"], ["Sugar", "Pantry"],
+    ["Salt", "Pantry"], ["Instant noodles", "Pantry"], ["Spaghetti pasta", "Pantry"],
+    ["Tomato sauce", "Pantry"], ["Canned sardines", "Pantry"], ["Corned beef", "Pantry"],
+    ["Canned tuna", "Pantry"], ["Peanut butter", "Pantry"], ["Oatmeal", "Pantry"],
+    ["Ice cream", "Frozen"], ["Frozen siomai", "Frozen"], ["Frozen fries", "Frozen"],
+    ["3-in-1 coffee", "Beverages"], ["Instant coffee", "Beverages"], ["Milo", "Beverages"],
+    ["Bottled water", "Beverages"], ["Soft drinks", "Beverages"], ["Juice powder", "Beverages"],
+    ["Chips", "Snacks"], ["Biscuits", "Snacks"], ["Crackers", "Snacks"], ["Chocolate", "Snacks"],
+    ["Dish soap", "Household"], ["Laundry detergent", "Household"],
+    ["Fabric conditioner", "Household"], ["Bath soap", "Household"],
+    ["Shampoo", "Household"], ["Toothpaste", "Household"],
+    ["Tissue", "Household"], ["Trash bags", "Household"],
+  ];
+
   // ---------- State ----------
 
   let expenses = loadExpenses();
   let budget = loadBudget();
+  let customItems = loadCustomItems();
   let filters = { search: "", category: "", month: "" };
 
   function loadExpenses() {
@@ -39,6 +71,23 @@
   function loadBudget() {
     const v = parseFloat(localStorage.getItem(BUDGET_KEY));
     return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  function loadCustomItems() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(ITEMS_KEY));
+      if (!Array.isArray(raw)) return [];
+      return raw.filter(
+        (i) => i && typeof i.id === "string" && typeof i.name === "string" &&
+          CATEGORIES.includes(i.category)
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  function persistItems() {
+    localStorage.setItem(ITEMS_KEY, JSON.stringify(customItems));
   }
 
   function persist() {
@@ -302,7 +351,13 @@
     const opt = (s) => `<option value="${s.replace(/"/g, "&quot;")}"></option>`;
     const stores = [...new Set(expenses.map((e) => e.store).filter(Boolean))].sort();
     $("#store-suggestions").innerHTML = stores.map(opt).join("");
-    const items = [...new Set(expenses.map((e) => e.item))].sort((a, b) =>
+    // Built-in catalog, then custom items, then purchase history — later
+    // sources override earlier ones so the user's own spelling wins.
+    const names = new Map();
+    for (const [name] of CATALOG) names.set(name.toLowerCase(), name);
+    for (const i of customItems) names.set(i.name.toLowerCase(), i.name);
+    for (const e of expenses) names.set(e.item.toLowerCase(), e.item);
+    const items = [...names.values()].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
     $("#item-suggestions").innerHTML = items.map(opt).join("");
@@ -310,17 +365,27 @@
 
   // When a typed item matches a previous expense, pre-fill the rest of the
   // form from the most recent purchase of that item (without overwriting
-  // anything the user already typed).
+  // anything the user already typed). Items known only from the custom list
+  // or built-in catalog pre-fill the category.
   $("#f-item").addEventListener("input", () => {
     const name = $("#f-item").value.trim().toLowerCase();
     if (!name) return;
     const match = [...expenses]
       .sort((a, b) => (a.date < b.date ? 1 : -1))
       .find((e) => e.item.toLowerCase() === name);
-    if (!match) return;
-    $("#f-category").value = match.category;
-    if (!$("#f-store").value && match.store) $("#f-store").value = match.store;
-    if (!$("#f-amount").value) $("#f-amount").value = match.amount;
+    if (match) {
+      $("#f-category").value = match.category;
+      if (!$("#f-store").value && match.store) $("#f-store").value = match.store;
+      if (!$("#f-amount").value) $("#f-amount").value = match.amount;
+      return;
+    }
+    const custom = customItems.find((i) => i.name.toLowerCase() === name);
+    if (custom) {
+      $("#f-category").value = custom.category;
+      return;
+    }
+    const builtin = CATALOG.find(([n]) => n.toLowerCase() === name);
+    if (builtin) $("#f-category").value = builtin[1];
   });
 
   $("#expense-form").addEventListener("submit", (ev) => {
@@ -430,6 +495,65 @@
     showToast("CSV downloaded");
   });
 
+  // Item list maintenance
+  const itemsModal = $("#items-modal");
+
+  function renderItemsList() {
+    const list = $("#items-list");
+    list.innerHTML = "";
+    if (customItems.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty-note";
+      li.textContent = "No custom items yet — built-in suggestions are still active.";
+      list.appendChild(li);
+      return;
+    }
+    const sorted = [...customItems].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+    for (const item of sorted) {
+      const li = document.createElement("li");
+      li.innerHTML =
+        `<span></span><span class="cat-pill"></span>` +
+        `<button class="btn-icon" data-del-item="${item.id}" title="Remove from list">🗑️</button>`;
+      li.children[0].textContent = item.name;
+      li.children[1].textContent = item.category;
+      list.appendChild(li);
+    }
+  }
+
+  $("#btn-items").addEventListener("click", () => {
+    renderItemsList();
+    itemsModal.showModal();
+  });
+  $("#btn-items-close").addEventListener("click", () => itemsModal.close());
+
+  $("#item-add-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const name = $("#i-name").value.trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    if (customItems.some((i) => i.name.toLowerCase() === lower)) {
+      showToast("That item is already in your list");
+      return;
+    }
+    customItems.push({ id: crypto.randomUUID(), name, category: $("#i-category").value });
+    persistItems();
+    $("#i-name").value = "";
+    $("#i-name").focus();
+    renderItemsList();
+    showToast(`"${name}" added to suggestions`);
+  });
+
+  $("#items-list").addEventListener("click", (ev) => {
+    const delId = ev.target.closest("[data-del-item]")?.dataset.delItem;
+    if (!delId) return;
+    customItems = customItems.filter((i) => i.id !== delId);
+    persistItems();
+    renderItemsList();
+    showToast("Item removed from suggestions");
+  });
+
   // Reset all data
   $("#btn-reset").addEventListener("click", () => {
     if (expenses.length === 0 && !budget) {
@@ -512,6 +636,7 @@
     // Populate category selects
     const catOptions = CATEGORIES.map((c) => `<option>${c}</option>`).join("");
     $("#f-category").innerHTML = catOptions;
+    $("#i-category").innerHTML = catOptions;
     $("#filter-category").innerHTML = `<option value="">All categories</option>` + catOptions;
 
     applyTheme(
