@@ -293,17 +293,35 @@
     $("#f-date").value = expense?.date || todayISO();
     $("#f-category").value = expense?.category || CATEGORIES[0];
     $("#f-store").value = expense?.store || "";
-    refreshStoreSuggestions();
+    refreshSuggestions();
     expenseModal.showModal();
     $("#f-item").focus();
   }
 
-  function refreshStoreSuggestions() {
+  function refreshSuggestions() {
+    const opt = (s) => `<option value="${s.replace(/"/g, "&quot;")}"></option>`;
     const stores = [...new Set(expenses.map((e) => e.store).filter(Boolean))].sort();
-    $("#store-suggestions").innerHTML = stores
-      .map((s) => `<option value="${s.replace(/"/g, "&quot;")}"></option>`)
-      .join("");
+    $("#store-suggestions").innerHTML = stores.map(opt).join("");
+    const items = [...new Set(expenses.map((e) => e.item))].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    $("#item-suggestions").innerHTML = items.map(opt).join("");
   }
+
+  // When a typed item matches a previous expense, pre-fill the rest of the
+  // form from the most recent purchase of that item (without overwriting
+  // anything the user already typed).
+  $("#f-item").addEventListener("input", () => {
+    const name = $("#f-item").value.trim().toLowerCase();
+    if (!name) return;
+    const match = [...expenses]
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .find((e) => e.item.toLowerCase() === name);
+    if (!match) return;
+    $("#f-category").value = match.category;
+    if (!$("#f-store").value && match.store) $("#f-store").value = match.store;
+    if (!$("#f-amount").value) $("#f-amount").value = match.amount;
+  });
 
   $("#expense-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
