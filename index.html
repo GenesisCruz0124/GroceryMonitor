@@ -22,6 +22,7 @@
       </div>
       <div class="topbar-actions">
         <button id="btn-export" class="btn btn-ghost" title="Download all expenses as a CSV file">⬇ Export CSV</button>
+        <button id="btn-items" class="btn btn-ghost" title="Manage your item suggestion list">🗂 Items</button>
         <button id="btn-reset" class="btn btn-ghost" title="Permanently delete all expenses and budget">⟲ Reset</button>
         <button id="btn-theme" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
         <button id="btn-add" class="btn btn-primary">+ Add Expense</button>
@@ -147,6 +148,21 @@
         <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Item list maintenance modal -->
+  <dialog id="items-modal">
+    <h2>My item list</h2>
+    <p class="muted">Items here show up as suggestions when adding an expense — even before your first purchase. Common grocery items are already built in; add your own below.</p>
+    <form id="item-add-form" class="item-add-row">
+      <input type="text" id="i-name" placeholder="Item name" required maxlength="80" />
+      <select id="i-category"></select>
+      <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+    <ul id="items-list" class="items-list"></ul>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="btn-items-close">Close</button>
+    </div>
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
