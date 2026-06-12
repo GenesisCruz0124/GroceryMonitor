@@ -577,6 +577,25 @@
     showToast("All data deleted — starting fresh");
   });
 
+  // Install button — shown only when the browser says the app is installable
+  let deferredInstall = null;
+  window.addEventListener("beforeinstallprompt", (ev) => {
+    ev.preventDefault();
+    deferredInstall = ev;
+    $("#btn-install").classList.remove("hidden");
+  });
+  $("#btn-install").addEventListener("click", async () => {
+    if (!deferredInstall) return;
+    deferredInstall.prompt();
+    await deferredInstall.userChoice;
+    deferredInstall = null;
+    $("#btn-install").classList.add("hidden");
+  });
+  window.addEventListener("appinstalled", () => {
+    $("#btn-install").classList.add("hidden");
+    showToast("App installed 🎉");
+  });
+
   // Theme toggle
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
