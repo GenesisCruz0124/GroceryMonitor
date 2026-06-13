@@ -7,6 +7,7 @@
   const BUDGET_KEY = "groceryMonitor.budget";
   const THEME_KEY = "groceryMonitor.theme";
   const ITEMS_KEY = "groceryMonitor.items";
+  const LIST_KEY = "groceryMonitor.list";
 
   const CATEGORIES = [
     "Produce", "Dairy & Eggs", "Meat & Seafood", "Bakery", "Pantry",
@@ -50,44 +51,52 @@
 
   // ---------- State ----------
 
-  let expenses = loadExpenses();
-  let budget = loadBudget();
-  let customItems = loadCustomItems();
+  // Sanitizers are shared between localStorage loading and backup restore
+  const sanitizeExpenses = (raw) =>
+    !Array.isArray(raw) ? [] : raw.filter(
+      (e) => e && typeof e.id === "string" && typeof e.item === "string" &&
+        typeof e.amount === "number" && /^\d{4}-\d{2}-\d{2}$/.test(e.date || "")
+    );
+
+  const sanitizeItems = (raw) =>
+    !Array.isArray(raw) ? [] : raw.filter(
+      (i) => i && typeof i.id === "string" && typeof i.name === "string" &&
+        CATEGORIES.includes(i.category)
+    );
+
+  const sanitizeList = (raw) =>
+    !Array.isArray(raw) ? [] : raw
+      .filter((i) => i && typeof i.id === "string" && typeof i.name === "string")
+      .map((i) => ({
+        id: i.id,
+        name: i.name,
+        price: Number.isFinite(i.price) && i.price > 0 ? i.price : null,
+        qty: Number.isFinite(i.qty) && i.qty >= 1 ? Math.round(i.qty) : 1,
+        done: !!i.done,
+      }));
+
+  const sanitizeBudget = (v) => (Number.isFinite(v) && v > 0 ? v : null);
+
+  function loadKey(key, sanitize) {
+    try {
+      return sanitize(JSON.parse(localStorage.getItem(key)));
+    } catch {
+      return sanitize(null);
+    }
+  }
+
+  let expenses = loadKey(STORAGE_KEY, sanitizeExpenses);
+  let budget = sanitizeBudget(parseFloat(localStorage.getItem(BUDGET_KEY)));
+  let customItems = loadKey(ITEMS_KEY, sanitizeItems);
+  let shoppingList = loadKey(LIST_KEY, sanitizeList);
   let filters = { search: "", category: "", month: "" };
-
-  function loadExpenses() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (!Array.isArray(raw)) return [];
-      return raw.filter(
-        (e) => e && typeof e.id === "string" && typeof e.item === "string" &&
-          typeof e.amount === "number" && /^\d{4}-\d{2}-\d{2}$/.test(e.date || "")
-      );
-    } catch {
-      return [];
-    }
-  }
-
-  function loadBudget() {
-    const v = parseFloat(localStorage.getItem(BUDGET_KEY));
-    return Number.isFinite(v) && v > 0 ? v : null;
-  }
-
-  function loadCustomItems() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(ITEMS_KEY));
-      if (!Array.isArray(raw)) return [];
-      return raw.filter(
-        (i) => i && typeof i.id === "string" && typeof i.name === "string" &&
-          CATEGORIES.includes(i.category)
-      );
-    } catch {
-      return [];
-    }
-  }
 
   function persistItems() {
     localStorage.setItem(ITEMS_KEY, JSON.stringify(customItems));
+  }
+
+  function persistList() {
+    localStorage.setItem(LIST_KEY, JSON.stringify(shoppingList));
   }
 
   function persist() {
@@ -343,6 +352,7 @@
     $("#f-category").value = expense?.category || CATEGORIES[0];
     $("#f-store").value = expense?.store || "";
     refreshSuggestions();
+    renderPriceHistory($("#f-item").value.trim());
     expenseModal.showModal();
     $("#f-item").focus();
   }
@@ -363,29 +373,64 @@
     $("#item-suggestions").innerHTML = items.map(opt).join("");
   }
 
+  // Purchases of an item, most recent first
+  function purchasesOf(name) {
+    const lower = name.toLowerCase();
+    return expenses
+      .filter((e) => e.item.toLowerCase() === lower)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  // Resolve the most likely category for an item name: history, then
+  // the custom list, then the built-in catalog.
+  function categoryFor(name) {
+    const lower = name.toLowerCase();
+    const past = purchasesOf(name)[0];
+    if (past) return past.category;
+    const custom = customItems.find((i) => i.name.toLowerCase() === lower);
+    if (custom) return custom.category;
+    const builtin = CATALOG.find(([n]) => n.toLowerCase() === lower);
+    return builtin ? builtin[1] : null;
+  }
+
+  function renderPriceHistory(name) {
+    const el = $("#price-history");
+    const past = purchasesOf(name).slice(0, 3);
+    if (past.length === 0) {
+      el.classList.add("hidden");
+      el.innerHTML = "";
+      return;
+    }
+    const parts = past.map((e) =>
+      `${fmtMoney(e.amount)} <span>(${monthLabel(monthKey(e.date))} ${Number(e.date.slice(8))})</span>`
+    );
+    let trend = "";
+    if (past.length >= 2 && past[0].amount !== past[1].amount) {
+      trend = past[0].amount > past[1].amount
+        ? ` <span class="up">▲ price went up</span>`
+        : ` <span class="down">▼ price went down</span>`;
+    }
+    el.innerHTML = `Last prices: ${parts.join(" · ")}${trend}`;
+    el.classList.remove("hidden");
+  }
+
   // When a typed item matches a previous expense, pre-fill the rest of the
   // form from the most recent purchase of that item (without overwriting
-  // anything the user already typed). Items known only from the custom list
-  // or built-in catalog pre-fill the category.
+  // anything the user already typed) and show its recent price history.
+  // Items known only from the custom list or catalog pre-fill the category.
   $("#f-item").addEventListener("input", () => {
-    const name = $("#f-item").value.trim().toLowerCase();
+    const name = $("#f-item").value.trim();
+    renderPriceHistory(name);
     if (!name) return;
-    const match = [...expenses]
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .find((e) => e.item.toLowerCase() === name);
+    const match = purchasesOf(name)[0];
     if (match) {
       $("#f-category").value = match.category;
       if (!$("#f-store").value && match.store) $("#f-store").value = match.store;
       if (!$("#f-amount").value) $("#f-amount").value = match.amount;
       return;
     }
-    const custom = customItems.find((i) => i.name.toLowerCase() === name);
-    if (custom) {
-      $("#f-category").value = custom.category;
-      return;
-    }
-    const builtin = CATALOG.find(([n]) => n.toLowerCase() === name);
-    if (builtin) $("#f-category").value = builtin[1];
+    const cat = categoryFor(name);
+    if (cat) $("#f-category").value = cat;
   });
 
   $("#expense-form").addEventListener("submit", (ev) => {
@@ -495,6 +540,186 @@
     showToast("CSV downloaded");
   });
 
+  // Shopping list
+  const listModal = $("#list-modal");
+
+  function renderShoppingList() {
+    const list = $("#shopping-list");
+    list.innerHTML = "";
+    if (shoppingList.length === 0) {
+      const li = document.createElement("li");
+      li.className = "empty-note";
+      li.textContent = "Your list is empty — add items above.";
+      list.appendChild(li);
+    }
+    for (const item of shoppingList) {
+      const li = document.createElement("li");
+      li.className = item.done ? "done" : "";
+      const lineTotal = item.price ? item.price * item.qty : null;
+      li.innerHTML =
+        `<input type="checkbox" data-check="${item.id}" ${item.done ? "checked" : ""} />` +
+        `<span class="item-name"></span>` +
+        (item.qty > 1 ? `<span class="qty">×${item.qty}</span>` : "") +
+        `<span class="price">${lineTotal ? fmtMoney(lineTotal) : "—"}</span>` +
+        `<button class="btn-icon" data-del-list="${item.id}" title="Remove">🗑️</button>`;
+      li.querySelector(".item-name").textContent = item.name;
+      list.appendChild(li);
+    }
+    const total = shoppingList.reduce((s, i) => s + (i.price ? i.price * i.qty : 0), 0);
+    const checked = shoppingList.filter((i) => i.done)
+      .reduce((s, i) => s + (i.price ? i.price * i.qty : 0), 0);
+    $("#list-totals").innerHTML = shoppingList.length
+      ? `<span>In cart: <strong>${fmtMoney(checked)}</strong></span><span>List total: ${fmtMoney(total)}</span>`
+      : "";
+  }
+
+  $("#btn-list").addEventListener("click", () => {
+    refreshSuggestions();
+    renderShoppingList();
+    listModal.showModal();
+  });
+  $("#btn-list-close").addEventListener("click", () => listModal.close());
+
+  $("#list-add-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const name = $("#l-name").value.trim();
+    if (!name) return;
+    const price = parseFloat($("#l-price").value);
+    const qty = parseInt($("#l-qty").value, 10);
+    shoppingList.push({
+      id: crypto.randomUUID(),
+      name,
+      price: Number.isFinite(price) && price > 0 ? Math.round(price * 100) / 100 : null,
+      qty: Number.isFinite(qty) && qty >= 1 ? qty : 1,
+      done: false,
+    });
+    persistList();
+    $("#l-name").value = "";
+    $("#l-price").value = "";
+    $("#l-qty").value = "1";
+    $("#l-name").focus();
+    renderShoppingList();
+  });
+
+  // Pre-fill the price from the most recent purchase of the typed item
+  $("#l-name").addEventListener("input", () => {
+    const past = purchasesOf($("#l-name").value.trim())[0];
+    if (past && !$("#l-price").value) $("#l-price").value = past.amount;
+  });
+
+  $("#shopping-list").addEventListener("click", (ev) => {
+    const checkId = ev.target.closest("[data-check]")?.dataset.check;
+    const delId = ev.target.closest("[data-del-list]")?.dataset.delList;
+    if (checkId) {
+      const item = shoppingList.find((i) => i.id === checkId);
+      if (item) item.done = ev.target.checked;
+      persistList();
+      renderShoppingList();
+    } else if (delId) {
+      shoppingList = shoppingList.filter((i) => i.id !== delId);
+      persistList();
+      renderShoppingList();
+    }
+  });
+
+  $("#list-convert-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const checked = shoppingList.filter((i) => i.done);
+    if (checked.length === 0) {
+      showToast("Check off the items you bought first");
+      return;
+    }
+    const priced = checked.filter((i) => i.price);
+    if (priced.length === 0) {
+      showToast("Add prices to the checked items first");
+      return;
+    }
+    const store = $("#l-store").value.trim();
+    const date = todayISO();
+    for (const item of priced) {
+      expenses.push({
+        id: crypto.randomUUID(),
+        item: item.name,
+        amount: Math.round(item.price * item.qty * 100) / 100,
+        date,
+        category: categoryFor(item.name) || "Other",
+        store,
+      });
+    }
+    const pricedIds = new Set(priced.map((i) => i.id));
+    shoppingList = shoppingList.filter((i) => !pricedIds.has(i.id));
+    persist();
+    persistList();
+    renderShoppingList();
+    render();
+    const skipped = checked.length - priced.length;
+    showToast(
+      `${priced.length} expense${priced.length === 1 ? "" : "s"} added` +
+      (skipped ? ` — ${skipped} skipped (no price)` : "")
+    );
+  });
+
+  // Data management (export / backup / restore / reset)
+  const dataModal = $("#data-modal");
+  $("#btn-data").addEventListener("click", () => dataModal.showModal());
+  $("#btn-data-close").addEventListener("click", () => dataModal.close());
+
+  function downloadFile(name, content, type) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  $("#btn-backup").addEventListener("click", () => {
+    const backup = {
+      app: "GroceryMonitor",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      expenses,
+      budget,
+      customItems,
+      shoppingList,
+    };
+    downloadFile(`grocery-backup-${todayISO()}.json`, JSON.stringify(backup, null, 2), "application/json");
+    showToast("Backup downloaded — keep it somewhere safe");
+  });
+
+  $("#btn-restore").addEventListener("click", () => $("#restore-file").click());
+  $("#restore-file").addEventListener("change", async (ev) => {
+    const file = ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      showToast("That file isn't a valid backup");
+      return;
+    }
+    if (data?.app !== "GroceryMonitor" || !Array.isArray(data.expenses)) {
+      showToast("That file isn't a GroceryMonitor backup");
+      return;
+    }
+    const restored = sanitizeExpenses(data.expenses);
+    const ok = confirm(
+      `Restore backup from ${data.exportedAt ? data.exportedAt.slice(0, 10) : "unknown date"} ` +
+      `with ${restored.length} expenses?\n\nThis REPLACES everything currently in the app.`
+    );
+    if (!ok) return;
+    expenses = restored;
+    budget = sanitizeBudget(data.budget);
+    customItems = sanitizeItems(data.customItems);
+    shoppingList = sanitizeList(data.shoppingList);
+    persist();
+    persistItems();
+    persistList();
+    render();
+    dataModal.close();
+    showToast(`Backup restored — ${expenses.length} expenses loaded`);
+  });
+
   // Item list maintenance
   const itemsModal = $("#items-modal");
 
@@ -556,24 +781,29 @@
 
   // Reset all data
   $("#btn-reset").addEventListener("click", () => {
-    if (expenses.length === 0 && !budget) {
+    if (expenses.length === 0 && !budget && customItems.length === 0 && shoppingList.length === 0) {
       showToast("Nothing to reset");
       return;
     }
     const ok = confirm(
-      "This permanently deletes ALL expenses and your budget.\n\n" +
-      "Tip: use Export CSV first if you want a backup.\n\nReset everything?"
+      "This permanently deletes ALL expenses, your budget, custom items, and shopping list.\n\n" +
+      "Tip: use Download backup first if you might want this data back.\n\nReset everything?"
     );
     if (!ok) return;
     expenses = [];
     budget = null;
+    customItems = [];
+    shoppingList = [];
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(BUDGET_KEY);
+    localStorage.removeItem(ITEMS_KEY);
+    localStorage.removeItem(LIST_KEY);
     filters = { search: "", category: "", month: "" };
     $("#filter-search").value = "";
     $("#filter-category").value = "";
     $("#filter-month").value = "";
     render();
+    dataModal.close();
     showToast("All data deleted — starting fresh");
   });
 
